@@ -9,8 +9,8 @@ says other compilers and architectures are "likely affected but not yet characte
 [KyberSlash](https://eprint.iacr.org/2024/1049) showed something similar for Kyber:
 a harmless-looking division turns into a variable-time `div` depending on how you compile it.
 
-So I want to find out: **which compiler, flag and CPU combinations break the
-constant-time guarantees of the new post-quantum standards (ML-KEM, ML-DSA)?**
+find out which compiler, flag and CPU combinations break the
+constant-time guarantees of the new post-quantum standards (ML-KEM, ML-DSA)?
 
 ## idea
 
