@@ -1,0 +1,9 @@
+{
+  "name": "optileak",
+  "build": { "dockerfile": "Dockerfile" },
+  "customizations": {
+    "vscode": {
+      "extensions": ["ms-vscode.cpptools", "ms-python.python", "tamasfe.even-better-toml"]
+    }
+  }
+}
