@@ -7,7 +7,8 @@
 
 #endif
 
-// p is a pointer to the memory region, n is size of  memory in bytes 
-//  CT_SECRET macro marks  specified memory region as undefined, indicating that it contains
-// secret data, should not be accessed or modified. CT_PUBLIC macro marks the specified memory 
-// region as defined, indicating that it is safe to access, modify. 
+// p: pointer to the memory, n: size in bytes
+// CT_SECRET: mark bytes as "uninitialised". Valgrind tracks everything computed
+//   from them and reports when they decide a branch or a memory address
+//   -> that is a timing leak
+// CT_PUBLIC: declassify, these bytes may now become public (like final output)
