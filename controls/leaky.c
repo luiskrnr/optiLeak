@@ -9,3 +9,7 @@ uint8_t ctl_leaky(uint8_t secret) {
     if (secret & 1) { // odd or even of lowest bit
         r ^= 0x5a; // just some op, branch has some task
     }
+
+    return r; 
+}
+// valgrind should report, if not, tool is broken 
