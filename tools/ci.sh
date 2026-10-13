@@ -35,3 +35,14 @@ echo '### `hunt.py kyber-ref-2023` (before fix)' >>"$OUT"
 echo '```' >>"$OUT"; python3 tools/hunt.py kyber-ref-2023 -O1 -Os >>"$OUT" 2>&1; echo '```' >>"$OUT"
 echo '### `hunt.py kyber-ref-2024` (after fix)' >>"$OUT"
 echo '```' >>"$OUT"; python3 tools/hunt.py kyber-ref-2024 -O1 -Os >>"$OUT" 2>&1; echo '```' >>"$OUT"
+
+# 4. Compiler-version matrix: which clang versions introduce the Clangover leak?
+echo '### Compiler matrix: `kyber-ref-2023` (before fix)' >>"$OUT"
+echo '| compiler | level | leaking function | first leaky pass |' >>"$OUT"
+echo '|---|---|---|---|' >>"$OUT"
+for cc in clang-15 clang-16 clang-17 clang-18 clang-19 clang-20; do
+  if ! command -v "$cc" >/dev/null; then
+    echo "| $cc | – | not installed | – |" >>"$OUT"; continue
+  fi
+  python3 tools/hunt.py kyber-ref-2023 --cc "$cc" --summary -O1 -O2 -Os >>"$OUT" 2>&1
+done

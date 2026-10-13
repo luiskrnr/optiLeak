@@ -2,7 +2,7 @@ name: optiLeak
 
 on:
   push:
-  workflow_dispatch:        # "Run workflow" button gh
+  workflow_dispatch:        # "Run workflow" button on GitHub
 
 jobs:
   blame:
@@ -14,10 +14,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install toolchain
+      - name: Install toolchains
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends clang llvm valgrind
+          sudo apt-get install -y --no-install-recommends clang llvm valgrind wget
+          for v in 15 16 17 18 19 20; do
+            sudo apt-get install -y --no-install-recommends clang-$v \
+              || (wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh && sudo bash /tmp/llvm.sh $v) \
+              || echo "clang-$v not available on this runner"
+          done
 
       - name: Run optiLeak
         run: ./tools/ci.sh

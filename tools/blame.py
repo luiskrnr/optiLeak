@@ -41,7 +41,7 @@ MAX_DIFF = 40 # lines of diff to print
 
 
 def clang(src, flags, extra=(), out=OBJ, emit=()):
-    return subprocess.run(["clang", *flags, *emit, *extra, "-c", src, "-o", str(out)],
+    return subprocess.run([CC, *flags, *emit, *extra, "-c", src, "-o", str(out)],
                           capture_output=True, text=True, check=True)
 
 
@@ -60,13 +60,14 @@ def count(fn, kind):
 
 
 HARNESS = None   # set from --harness
+CC = "clang"     # compiler, set from --cc
 LINK = []        
 
 def valgrind_reports(fn, flags):
     """Link the last build with the harness, run valgrind, count reports inside fn."""
     exe, xml = Path("build/blame_exe"), Path("build/blame_vg.xml")
     incs = [f for f in flags if f.startswith("-I")]
-    subprocess.run(["clang", "-O0", "-g", *incs, HARNESS, str(OBJ), *LINK, "-o", str(exe)],
+    subprocess.run([CC, "-O0", "-g", *incs, HARNESS, str(OBJ), *LINK, "-o", str(exe)],
                    capture_output=True, text=True, check=True)
     subprocess.run(["valgrind", "--xml=yes", f"--xml-file={xml}", str(exe)],
                    capture_output=True, text=True)
@@ -114,7 +115,8 @@ def ir_after(src, fn, flags, limit):
     return m.group(0).splitlines() if m else []
 
 
-def main(src, fn, kind, flags):
+def main(src, fn, kind, flags, verbose=True):
+    """Print the analysis; return the name of the first leaky pass (or a short reason)."""
     Path("build").mkdir(exist_ok=True)
 
     def at(limit):  # how many risky instructions with only `limit` passes enabled
@@ -122,11 +124,16 @@ def main(src, fn, kind, flags):
 
     full = measure(src, fn, kind, flags)
     if full == 0:
-        print(f"{fn}: no {kind} with {' '.join(flags)}, nothing to blame.")
-        return
+        if verbose:
+            print(f"{fn}: no {kind} with {' '.join(flags)}, nothing to blame.")
+        return "no leak"
     all_passes = passes(src, flags)
+    if not all_passes:   # this compiler prints opt-bisect output in another format
+        return "unknown (opt-bisect output not recognised)"
     base = at(0)
-    print(f"{fn}: {full} {kind}(s) with all {len(all_passes)} passes, {base} with none.")
+    if verbose:
+        print(f"{fn}: {full} {kind}(s) with all {len(all_passes)} passes, {base} with none.")
+    result = "present without optimization passes (front-end/backend)"
 
     if full > base:
         lo, hi = 0, len(all_passes)       # invariant: at(lo) == base, at(hi) > base
@@ -136,23 +143,23 @@ def main(src, fn, kind, flags):
                 hi = mid
             else:
                 lo = mid
-        print(f"First pass that adds a {kind}: ({hi}) {dict(all_passes)[hi]}")
+        result = dict(all_passes)[hi]
+        if not verbose:
+            return result
+        print(f"First pass that adds a {kind}: ({hi}) {result}")
         before, after = ir_after(src, fn, flags, lo), ir_after(src, fn, flags, hi)
         what = "IR"
-
-
         if before == after:   # machine-level pass: IR unchanged, look at the assembly
             before, after = asm_after(src, fn, flags, lo), asm_after(src, fn, flags, hi)
             what = "assembly"
         print(f"{what} of {fn} before -> after this pass:")
-
         diff = list(difflib.unified_diff(before, after, "before", "after", lineterm="", n=1))
         for line in diff[:MAX_DIFF]:
             print("   " + line)
         if len(diff) > MAX_DIFF:
             print(f"   ... {len(diff) - MAX_DIFF} more lines")
 
-    if base > 0 and kind != "secret":
+    if verbose and base > 0 and kind != "secret":
         print(f"{base} {kind}(s) exist even with no optimization passes:")
         print("-> front-end or backend (instruction selection / lowering).")
         for sw in BACKEND_SWITCHES:
@@ -162,6 +169,7 @@ def main(src, fn, kind, flags):
                 continue  # switch not available for this target
             if n < full:
                 print(f"   -mllvm {sw}: {full} -> {n}")
+    return result
 
 
 if __name__ == "__main__":

@@ -6,14 +6,24 @@ valgrind, list every function with secret-dependent branches/addresses,
 then ask blame.py which LLVM pass introduced each leak.
 
 Usage:
-    python3 tools/hunt.py <target> [-O0 -O1 ...]
+    python3 tools/hunt.py <target> [--cc clang-17] [--summary] [-O0 -O1 ...]
 """
+import argparse
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import blame
+
+
+def sh(cmd):
+    """Run a command; on failure show its error output and stop."""
+    p = subprocess.run(cmd, capture_output=True, text=True)
+    if p.returncode != 0:
+        sys.exit(f"command failed: {' '.join(cmd)}\n{p.stderr}")
+    return p
+
 
 KYBER_REF_SOURCES = ["kem.c", "indcpa.c", "polyvec.c", "poly.c", "ntt.c", "cbd.c",
                      "reduce.c", "verify.c", "symmetric-shake.c", "fips202.c",
@@ -24,13 +34,17 @@ TARGETS = {
     "kyber-ref-2023": dict(
         repo="https://github.com/pq-crystals/kyber.git",
         commit="b628ba78711bc28327dc7d2d5c074a00f061884e",
-        subdir="ref", sources=KYBER_REF_SOURCES, harness="targets/kyber/harness.c",
+        subdir="ref",
+        sources=KYBER_REF_SOURCES,
+        harness="targets/kyber/harness.c",
     ),
     # Same code after the fix: should come out clean.
     "kyber-ref-2024": dict(
         repo="https://github.com/pq-crystals/kyber.git",
         commit="9b8d30698a3e7449aeb34e62339d4176f11e3c6c",
-        subdir="ref", sources=KYBER_REF_SOURCES, harness="targets/kyber/harness.c",
+        subdir="ref",
+        sources=KYBER_REF_SOURCES,
+        harness="targets/kyber/harness.c",
     ),
 }
 LEVELS = ["-O0", "-O1", "-O2", "-O3", "-Os"]
@@ -45,24 +59,22 @@ def fetch(name, t):
     return path / t["subdir"]
 
 
-def build(srcdir, sources, flags, outdir):
+def build(cc, srcdir, sources, flags, outdir):
     """Compile every library source into its own object file."""
     outdir.mkdir(parents=True, exist_ok=True)
     objs = {}
     for s in sources:
         obj = outdir / (Path(s).stem + ".o")
-        subprocess.run(["clang", "-g", *flags, "-c", str(srcdir / s), "-o", str(obj)],
-                       capture_output=True, text=True, check=True)
+        sh([cc, "-g", *flags, "-c", str(srcdir / s), "-o", str(obj)])
         objs[s] = obj
     return objs
 
 
-def leaks(harness, objs, flags, outdir):
+def leaks(cc, harness, objs, flags, outdir):
     """Run the harness under valgrind; return {function: (file, line)}."""
     exe, xml = outdir / "harness", outdir / "valgrind.xml"
     incs = [f for f in flags if f.startswith("-I")]
-    subprocess.run(["clang", "-O0", "-g", *incs, harness, *map(str, objs.values()),
-                    "-o", str(exe)], capture_output=True, text=True, check=True)
+    sh([cc, "-O0", "-g", *incs, harness, *map(str, objs.values()), "-o", str(exe)])
     run = subprocess.run(["valgrind", "--xml=yes", f"--xml-file={xml}", str(exe)],
                          capture_output=True, text=True)
     if run.returncode != 0:
@@ -76,33 +88,43 @@ def leaks(harness, objs, flags, outdir):
     return found
 
 
-def main(name, levels):
+def main(name, levels, cc="clang", summary=False):
     t = TARGETS[name]
     srcdir = fetch(name, t)
     flags_common = [f"-I{srcdir}", "-Iinclude"]
-    blame.HARNESS = t["harness"]
-    version = subprocess.run(["clang", "--version"], capture_output=True,
+    blame.HARNESS, blame.CC = t["harness"], cc
+    version = subprocess.run([cc, "--version"], capture_output=True,
                              text=True).stdout.splitlines()[0]
-    print(f"# {name} @ {t['commit'][:10]}  ({version})\n")
+    if not summary:
+        print(f"# {name} @ {t['commit'][:10]}  ({version})\n")
     for level in levels:
         flags = [level, *flags_common]
-        outdir = Path("build/hunt") / name / level.lstrip("-")
-        objs = build(srcdir, t["sources"], flags, outdir)
-        found = leaks(t["harness"], objs, flags, outdir)
+        outdir = Path("build/hunt") / name / cc / level.lstrip("-")
+        objs = build(cc, srcdir, t["sources"], flags, outdir)
+        found = leaks(cc, t["harness"], objs, flags, outdir)
         if not found:
-            print(f"{level}: no secret-dependent branches or addresses")
+            print(f"| {cc} | {level} | – | – |" if summary
+                  else f"{level}: no secret-dependent branches or addresses")
             continue
         for fn, (file, line) in found.items():
-            print(f"{level}: LEAK in {fn} ({file}:{line})")
-            # Bisect only this function's file; link everything else as-is.
             src = Path(file).name
+            if not summary:
+                print(f"{level}: LEAK in {fn} ({file}:{line})")
+            cause = "?"
             if src in t["sources"]:
+                # Bisect only this function's file; link everything else as-is.
                 blame.LINK = [str(o) for s, o in objs.items() if s != src]
-                blame.main(str(srcdir / src), fn, "secret", flags)
-            print()
+                cause = blame.main(str(srcdir / src), fn, "secret", flags, verbose=not summary)
+            if summary:
+                print(f"| {cc} | {level} | `{fn}` | {cause.split(' on ')[0]} |")
+            else:
+                print()
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2 or sys.argv[1] not in TARGETS:
-        sys.exit(__doc__ + "\nTargets: " + ", ".join(TARGETS))
-    main(sys.argv[1], sys.argv[2:] or LEVELS)
+    ap = argparse.ArgumentParser(usage=__doc__, allow_abbrev=False)
+    ap.add_argument("target", choices=TARGETS)
+    ap.add_argument("--cc", default="clang", help="compiler, e.g. clang-17")
+    ap.add_argument("--summary", action="store_true", help="one Markdown table row per result")
+    args, levels = ap.parse_known_args()
+    main(args.target, levels or LEVELS, args.cc, args.summary)
