@@ -60,13 +60,13 @@ def count(fn, kind):
 
 
 HARNESS = None   # set from --harness
-
+LINK = []        
 
 def valgrind_reports(fn, flags):
     """Link the last build with the harness, run valgrind, count reports inside fn."""
     exe, xml = Path("build/blame_exe"), Path("build/blame_vg.xml")
     incs = [f for f in flags if f.startswith("-I")]
-    subprocess.run(["clang", "-O0", "-g", *incs, HARNESS, str(OBJ), "-o", str(exe)],
+    subprocess.run(["clang", "-O0", "-g", *incs, HARNESS, str(OBJ), *LINK, "-o", str(exe)],
                    capture_output=True, text=True, check=True)
     subprocess.run(["valgrind", "--xml=yes", f"--xml-file={xml}", str(exe)],
                    capture_output=True, text=True)
@@ -145,7 +145,7 @@ def main(src, fn, kind, flags):
             before, after = asm_after(src, fn, flags, lo), asm_after(src, fn, flags, hi)
             what = "assembly"
         print(f"{what} of {fn} before -> after this pass:")
-        
+
         diff = list(difflib.unified_diff(before, after, "before", "after", lineterm="", n=1))
         for line in diff[:MAX_DIFF]:
             print("   " + line)

@@ -1,0 +1,23 @@
+name: optiLeak
+
+on:
+  push:
+  workflow_dispatch:        # "Run workflow" button gh
+
+jobs:
+  blame:
+    strategy:
+      fail-fast: false      # if x86 fails, still run ARM
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]   # x86-64 and ARM64, free for public repos
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang llvm valgrind
+
+      - name: Run optiLeak
+        run: ./tools/ci.sh
