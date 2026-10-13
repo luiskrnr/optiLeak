@@ -139,12 +139,19 @@ def main(src, fn, kind, flags):
         print(f"First pass that adds a {kind}: ({hi}) {dict(all_passes)[hi]}")
         before, after = ir_after(src, fn, flags, lo), ir_after(src, fn, flags, hi)
         what = "IR"
+
+
         if before == after:   # machine-level pass: IR unchanged, look at the assembly
             before, after = asm_after(src, fn, flags, lo), asm_after(src, fn, flags, hi)
             what = "assembly"
         print(f"{what} of {fn} before -> after this pass:")
-        for line in difflib.unified_diff(before, after, "before", "after", lineterm="", n=1):
+        
+        diff = list(difflib.unified_diff(before, after, "before", "after", lineterm="", n=1))
+        for line in diff[:MAX_DIFF]:
             print("   " + line)
+        if len(diff) > MAX_DIFF:
+            print(f"   ... {len(diff) - MAX_DIFF} more lines")
+
     if base > 0 and kind != "secret":
         print(f"{base} {kind}(s) exist even with no optimization passes:")
         print("-> front-end or backend (instruction selection / lowering).")
