@@ -30,3 +30,8 @@ run controls/frommsg.c ctl_frommsg secret --harness controls/harness_frommsg.c -
 run controls/frommsg.c ctl_frommsg branch -O2
 run controls/select.c ctl_select branch -O2 --target=riscv64-linux-gnu -ffreestanding
 run controls/compress.c ctl_compress1 div -O0
+# 3. Real library: Kyber reference before and after the Clangover fix
+echo '### `hunt.py kyber-ref-2023` (before fix)' >>"$OUT"
+echo '```' >>"$OUT"; python3 tools/hunt.py kyber-ref-2023 -O1 -Os >>"$OUT" 2>&1; echo '```' >>"$OUT"
+echo '### `hunt.py kyber-ref-2024` (after fix)' >>"$OUT"
+echo '```' >>"$OUT"; python3 tools/hunt.py kyber-ref-2024 -O1 -Os >>"$OUT" 2>&1; echo '```' >>"$OUT"
